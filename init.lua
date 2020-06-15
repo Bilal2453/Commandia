@@ -1,5 +1,5 @@
   --[[lit-meta
-  name = "Commandia"
+  name = "commandia"
   version = "0.0.1"
   dependencies = {}
   description = "A complete and simple to use commands manager for the library Discordia"
