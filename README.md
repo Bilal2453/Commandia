@@ -3,8 +3,29 @@ A complete and simple to use commands manager for the library Discordia
 
 # TODOs
 1. Documentations
-2. Command's cooldowns
+2. Command cooldown
 3. Commands Categories
+4. Optional arguments with default values
+5. Auto prompting for invalid arguments
+
+# Features
+- Commands hot-reloading (reload on changes)
+- Plain command names and aliases
+- Advanced arguments system
+  * Supports powerful flag-style similar to CLI tools (with supporting for quotes)
+  * Arguments types system
+        - Basic types, string (default), number, boolean
+        - Discord Objects (Member, User, Message, Role, Channel, Emoji)
+        - Discordia Objects (Color, Time-TODO-, Date-TODO-)
+        - Custom user-defined types in seperated files (supports hot-reloading)
+        - Custom user-defined types as callbacks
+  * Custom/default responses on invalid arguments
+  * Customizable Reactions on invalid/valid arguments
+  * Infinite arguments
+- Permissions management system (that also supports custom permissions such as "guildOwner")
+- Custom error handling with optional customizable reactions on command success/fail
+- All possible responses are customizable and can be turned off/on
+- All paths are customizable
 
 # Simple example
 Main File:
