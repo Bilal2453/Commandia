@@ -42,7 +42,7 @@ local manager = commandia.Manager{
 client:run("Bot TOKEN") -- Replace TOKEN by your bot token
 ```
 
-After running this code you will notice new directories, go to your `commands` folder and create a new file named `hello.command.lua`, and add the following code:
+After running this code -through `luvit main.lua`- you will notice new directories, go to your `commands` directory and create a new file named `hello.command.lua`, and add the following code:
 ```lua
 local function callback(self, msg)
   msg:reply("Oh Hello ".. msg.member.mentionString)
