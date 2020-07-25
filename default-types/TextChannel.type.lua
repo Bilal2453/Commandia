@@ -8,7 +8,7 @@ return function(v, msg)
 
   local c
   if id and isSnowflake(id) then
-		c = client:getChannel(id)
+		c = msg.client:getChannel(id)
 	elseif channelName then
     c = guild.textChannels:find(function(chnl)
 			return chnl.name:lower() == channelName:lower()
