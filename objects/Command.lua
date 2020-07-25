@@ -39,7 +39,7 @@ local function set(self, property, index, invert, disable)
 	end
 end
 
--- if the object is already defined just return the defined one
+-- if the object is already defined return that
 local definedCommand = discordia.class.classes.Command
 if definedCommand then return definedCommand end
 
@@ -48,12 +48,12 @@ local Command, getters, setters = discordia.class("Command")
 --*[[ Defining Class Constructor ]]
 
 function Command:__init(manager, name, callback, perms, aliases, args)
-	self.permissions = perms or {}
-	self.arguments = args or {}
   self._manager = err(1, "Command", "CommandsManager", manager)
-	self.callback = callback or function() end
-	self.aliases = aliases or {}
-	self.name = err(2, "Command", "string", name)
+	self._name = err(2, "Command", "string", name)
+	self._callback = callback or function() end
+	self._permissions = perms or {}
+	self._arguments = args or {}
+	self._aliases = aliases or {}
 
 	ids = ids + 1
 	self._id = ids
@@ -65,16 +65,32 @@ function setters:name(n)
 	self:setName(n)
 end
 
+local function hasField(t)
+	return type(t) == 'table' and not next(t)
+end
+
 function setters:arguments(v)
-	self:setArguments(v or {})
+	if hasField(v) then
+		self._arguments = {}
+	else
+		self:setArguments(v or {})
+	end
 end
 
 function setters:aliases(v)
-	self:setAliases(v or {})
+	if hasField(v) then
+		self._aliases = {}
+	else
+		self:setAliases(v or {})
+	end
 end
 
 function setters:permissions(v)
-	self:setPermissions(v or {})
+	if hasField(v) then
+		self._permissions = {}
+	else
+		self:setPermissions(v or {})
+	end
 end
 
 function setters:callback(v)
@@ -106,7 +122,7 @@ end
 --*[[ Defining Members Methods ]]
 
 function Command:setName(n)
-	local reged = self._manager._commands[self._name]
+	local reged = (self._manager._commands[self._name] or {})._id == self._id
 
 	if reged then self:unregister() end
 	self._name = err(1, "setName", "string", n)
@@ -115,10 +131,8 @@ function Command:setName(n)
   return self
 end
 
--- TODO: Simplify this method as much as possible and needed. it's silly!!
+--- TODO: Simplify this method as much as possible and needed. it's silly!!
 function Command:setArguments(name, argType, shortflag, fullflag, eatArgs, optional, output)
-	self._arguments = self._arguments or {}
-
 	name = err(2, "setArguments", {"string", "table"}, name)
 
 	local function setArgs(args)
@@ -134,13 +148,12 @@ function Command:setArguments(name, argType, shortflag, fullflag, eatArgs, optio
 	if type(name) == "table" then
 		for argName, arg in pairs(name) do
 			if type(argName) == "number" then
-				self:setArguments(arg)
+				self:setArguments(arg); return
 			elseif type(argName) == "string" and type(arg) == "table" then
 				arg.name = arg.name or argName
-				self:setArguments(arg)
+				self:setArguments(arg); return
 			elseif type(argName) == "string" and type(arg) ~= "table" then
-				setArgs(name)
-				break
+				setArgs(name); break
 			end
 		end
 	end
@@ -157,7 +170,7 @@ function Command:setArguments(name, argType, shortflag, fullflag, eatArgs, optio
 		fullflag = fullflag,
 
 		eatArgs = eatArgs,
-		optional = optional,
+		optional = optional, -- TODO: Implement
 
 		output = output,
   }
@@ -165,7 +178,7 @@ function Command:setArguments(name, argType, shortflag, fullflag, eatArgs, optio
   return self
 end
 
--- TODO: removeArguments
+--- TODO: removeArguments
 
 function Command:setAliases(a)
 	set(self, '_aliases', a)
@@ -193,11 +206,13 @@ function Command:setCallback(c)
 end
 
 function Command:register()
-  self._manager:registerCommand(self)
+	self._manager:registerCommand(self)
+	return self
 end
 
 function Command:unregister()
   self._manager:unregisterCommand(self)
+	return self
 end
 
 function Command:hasPermissions(member, channel)
@@ -218,7 +233,7 @@ function Command:hasPermissions(member, channel)
 
 	local commandsPerms = self._permissions
 	local memberPerms = member:getPermissions(channel)
-	-- TODO: Allow to the user to tinker with the customized perms + add their own
+	--- TODO: Allow to the user to tinker with the customized perms + add their own
 	local specialPerms = {
 		["guildOwner"] = channel.guild.owner.id == member.id,
 		["botOwner"] = self._manager._client.owner.id == member.id,
@@ -226,7 +241,7 @@ function Command:hasPermissions(member, channel)
 
 	-- This will allow to the owner(s) of the bot to bypass all command's perms
 	-- If you don't want this to happen (idk why would you tho) just comment the following line
-	-- TODO: make disabling this available as an option while initing manager
+	--- TODO: make disabling this available as an option while initing manager
 	if specialPerms.botOwner then return true end
 
 	local function isValid(hasPerm, value)
