@@ -7,13 +7,15 @@ return function (manager)
   local env = setmetatable({
     manager = manager,
     Command = function(...) return manager:createCommand(...) end,
-    require = require, -- Luvit's require
-  }, {__index = _G})
+    require = require,
+  }, {
+    __index = _G
+  })
 
-  ---* Unload Commands event (unloads before loads again)
+  ---* Unloading event
   local function onUnload(n) manager._commands[n] = nil end
 
-  ---* Load Commands event
+  ---* Loading event
   local function onLoad(n, c)
     if type(c) == 'function' then
 
@@ -40,25 +42,23 @@ return function (manager)
       local s, e = c and pcall(manager.registerCommand, manager, c)
 
       if not s and e then
-        manager._logger:log(1, baseErrorMsg, n, e)
-        return
+        manager._logger:log(1, baseErrorMsg, n, e); return
       end
 
     else
-      manager._logger:log(1, baseErrorMsg, n,
-      ('expected return value of "Command" got "%s"'):format(type(c)))
+      manager._logger:log(1, baseErrorMsg, n, ('expected return value of "Command" got "%s"'):format(type(c)))
       return
     end
 
     manager._logger:log(3, 'Successfully loaded "%s" command', n)
   end
 
-  ---* Loading Commands fails
+  ---* Error event
   local function onErr(n, err)
     manager._logger:log(1, baseErrorMsg, n, err)
   end
 
-  -- Load the commands and register them to the auto-reload event
+  -- Load commands and auto-reload on changes
   loader(manager._commandsPath, FILES_PATT, env, {
     onErr = onErr,
     onLoad = onLoad,
