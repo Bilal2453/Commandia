@@ -1,0 +1,8 @@
+types
+commands
+docs
+
+mainTesting.lua
+
+*.log
+*.code-workspace
