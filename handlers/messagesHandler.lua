@@ -1,10 +1,12 @@
 local assertCmd = require '../include/utils'.assertCmd
 local gmatch = require 'rex'.gmatch
+
+local remove, insert = table.remove, table.insert
 local f = string.format
 
 local baseErrorMsg = 'Error executing command\'s callback "%s" : %s'
 
--- Parsers and lexer
+-- Parsing
 
 local function getFlag(n, c)
 	for _, a in pairs(c.arguments) do
@@ -28,14 +30,13 @@ end
 
 local function argsParser(str, command)
 	local splitMesg = split(str)
-	table.remove(splitMesg, 1)
+	remove(splitMesg, 1)
 
 	local args = {}
 	local flags = {}
 
 	local function valid(i, q)
-		return type(splitMesg[i + q]) == 'string' and
-			not splitMesg[i + q]:match('^(%-%-?)')
+		return type(splitMesg[i + q]) == 'string' and not splitMesg[i + q]:match('^(%-%-?)')
 	end
 
 	local lastIndexedFlagArg = 0
@@ -53,7 +54,7 @@ local function argsParser(str, command)
 
 			for q = 1, (flag.eatArgs == -1 and #splitMesg) or flag.eatArgs or 1 do
 				if valid(i, q) then
-					table.insert(flags[flag.name], splitMesg[i + q])
+					insert(flags[flag.name], splitMesg[i + q])
 					lastIndexedFlagArg = i + q
 				else
 					break
@@ -61,7 +62,7 @@ local function argsParser(str, command)
 			end
 
 		elseif i > lastIndexedFlagArg then
-			table.insert(args, v)
+			insert(args, v)
 		end
 	end
 
@@ -100,10 +101,10 @@ local function fi(t, c, ...)
 	end
 
 	-- Call the callback at least once even when the table is empty
-	if #t <= 0 and success == nil then
+	if not next(t) and success == nil then
 		success, e = pcall(c, nil, ...)
 		if not success then return false, e end
-		table.insert(t, e)
+		insert(t, e)
 	end
 
 	return true
@@ -114,7 +115,7 @@ local function callCommand(command, msg)
 		or command.__name ~= 'Command' then return end
 
 	local splitMsg = split(msg.content)
-	table.remove(splitMsg, 1)
+	remove(splitMsg, 1)
 
 	local commandsArgs, err = argsParser(msg.content, command)
 
@@ -128,6 +129,7 @@ local function callCommand(command, msg)
 			index = "_replyToUndefinedArguments",
 			f = err
 		})
+
 		return
 	end
 
@@ -143,24 +145,28 @@ local function callCommand(command, msg)
 		-- meant to format the data before the type conversion
 		if type(flag.output) == 'function' then
 			sucs, errmsg = pcall(flag.output, flagargs)
+
 			if sucs then
 				flagargs = errmsg
 			else
-				return nil,
-					f('Error in "%s" Flag\'s output handler : %s', flagname, errmsg), 1
+				return nil, f('Error in "%s" Flag\'s output handler : %s', flagname, errmsg), 1
 			end
 		end
 
 		tyn, ty = flag.type, types[flag.type]
 		if ty then
+
 			sucs, errmsg = fi(flagargs, ty, msg, manager)
 			if not sucs then return nil, f('Error in "%s" type handler : %s', tyn, errmsg), 1 end
+
 		elseif type(tyn) == 'function' then
+
 			sucs, errmsg = fi(flagargs, tyn, msg, manager)
 			if not sucs then return nil, f('Error in "%s" type\'s custom handler : %s', flagname, errmsg), 1 end
+
 		end
 
-		if #flagargs <= 1 then  flags[flagname] = flagargs[1] end
+		if #flagargs <= 1 then flags[flagname] = flagargs[1] end
 	end
 
 	local s, e, m
@@ -193,7 +199,7 @@ local function callCommand(command, msg)
 	return true
 end
 
--- Actuall calling
+-- Actual command calling
 
 local function log(logger, s, l, m, ...)
 	if not s and m then logger:log(l, m, ...) end
@@ -222,7 +228,7 @@ local function call(name, msg, m, command, n)
 	end
 end
 
--- The initer callback
+-- The initial callback
 
 return function(manager, msg)
 	if not manager or not msg then return end
@@ -237,9 +243,7 @@ return function(manager, msg)
 	if not cmdName:find(prefix, 1, true) then return end
 	cmdName = cmdName:sub(#prefix+1) -- subtract the prefix from the command name. can be cheaper than not subtracting
 
-	local commands = manager._commands
-
-	for _, command in pairs(commands) do
+	for _, command in pairs(manager._commands) do
 		if #command.aliases < 1 then
 			if call(cmdName, msg, manager, command) then return end
 		else

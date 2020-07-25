@@ -10,17 +10,15 @@ end
 types.isSnowflake = isSnowflake
 
 return function(manager)
-  local env = setmetatable(
-    {
-      isSnowflake = isSnowflake,
-      discordia = discordia,
-      manager = manager,
-      client = manager._client,
-      types = types,
-    },
-
-    {__index = _G}
-  )
+  local env = setmetatable({
+    isSnowflake = isSnowflake,
+    discordia = discordia,
+    manager = manager,
+    client = manager._client,
+    types = types,
+  }, {
+    __index = _G
+  })
 
   local function onErr(n, e)
     manager._logger:log(1, 'Error loading type "%s" : %s', n, e)
@@ -38,10 +36,10 @@ return function(manager)
     manager._logger:log(3, 'Successfully reloaded "%s" type', n)
   end
 
-  --- Load library defined types (default types)
+  --- Load Commandia defined types (default types)
   loader(manager._defaultTypesPath, FILE_PATT, env, {
     onUnload = onUnload,
-    doWatch = true, -- Do not reload on change
+    doWatch = true, -- Do not reload on changes
     onLoad = onLoad,
     onErr = onErr,
   })

@@ -3,7 +3,6 @@ local pathJoin = require 'pathjoin'.pathJoin
 local fs = require 'fs'
 
 local stat, exists, scandir, readfile, mkdir = fs.statSync, fs.existsSync, fs.scandirSync, fs.readFileSync, fs.mkdirSync
-local module = {}
 
 local function call(c, ...)
 	if type(c) == "function" then
@@ -137,7 +136,7 @@ local function loadDirec(direc, filesPattern, env, ops)
 end
 
 
-module.loadDirec = loadDirec
-module.watch = watch
-
-return module
+return {
+	loadDirec = loadDirec,
+	watch = watch
+}

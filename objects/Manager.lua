@@ -10,6 +10,7 @@ local typesHandler = require '../handlers/typesHandler'
 local class, ids = discordia.class, 0
 local Manager, getters, setters = class("CommandsManager")
 
+local concat, insert = table.concat, table.insert
 local f = string.format
 
 
@@ -65,7 +66,7 @@ local OPTIONS_VALUES = {
 
 local argErr = function(name, dvalue, value, bs, l)
   local baseMsg = 'Invalid "Manager" option "%s" (%s expected, got %s instead)'
-  dvalue = type(dvalue) == 'table' and table.concat(dvalue, '|') or dvalue
+  dvalue = type(dvalue) == 'table' and concat(dvalue, '|') or dvalue
 
   error(f(bs or baseMsg, name, dvalue, type(value)), l or 5)
 end
@@ -166,7 +167,7 @@ end
 function getters:commandsNames()
   local names = {}
   for _, v in pairs(self._commands) do
-    table.insert(names, v.name)
+    insert(names, v.name)
   end
   return names
 end
@@ -228,7 +229,7 @@ function Manager:registerCommand(c, n)
 
   local pd = self._commands[n or c.name]
   if pd and pd._id ~= c._id and pd.name == c.name then
-    error(f('Can\'t register a new command when there is already a command registered with the same name "%s"', n or c.name))
+    error(f('Cannot register a new command when there is already a command registered with the same name "%s"', n or c.name))
   end
 
   self._commands[n or c.name] = c
