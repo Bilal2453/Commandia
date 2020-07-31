@@ -2,6 +2,8 @@ local discordia = require 'discordia'
 local err = require '../include/utils'.assertError
 local ids = 0
 
+local dummyFunc = function() end
+
 local function get(self, property, index)
 	local values = {}
 	for k, v in pairs(self[property] or {}) do
@@ -39,6 +41,10 @@ local function set(self, property, index, invert, disable)
 	end
 end
 
+local function hasField(t)
+	return type(t) == 'table' and next(t)
+end
+
 -- if the object is already defined return that
 local definedCommand = discordia.class.classes.Command
 if definedCommand then return definedCommand end
@@ -48,12 +54,14 @@ local Command, getters, setters = discordia.class("Command")
 --*[[ Defining Class Constructor ]]
 
 function Command:__init(manager, name, callback, perms, aliases, args)
-  self._manager = err(1, "Command", "CommandsManager", manager)
-	self._name = err(2, "Command", "string", name)
-	self._callback = callback or function() end
-	self._permissions = perms or {}
-	self._arguments = args or {}
-	self._aliases = aliases or {}
+	err(1, "Command", "CommandsManager", manager, 3)
+
+  self._manager = manager
+	self:setName(name)
+			:setArguments(args or {})
+	    :setPermissions(perms or {})
+	    :setCallback(callback or dummyFunc)
+	    :setAliases(aliases or {})
 
 	ids = ids + 1
 	self._id = ids
@@ -65,12 +73,8 @@ function setters:name(n)
 	self:setName(n)
 end
 
-local function hasField(t)
-	return type(t) == 'table' and not next(t)
-end
-
 function setters:arguments(v)
-	if hasField(v) then
+	if not hasField(v) then
 		self._arguments = {}
 	else
 		self:setArguments(v or {})
@@ -78,7 +82,7 @@ function setters:arguments(v)
 end
 
 function setters:aliases(v)
-	if hasField(v) then
+	if not hasField(v) then
 		self._aliases = {}
 	else
 		self:setAliases(v or {})
@@ -86,7 +90,7 @@ function setters:aliases(v)
 end
 
 function setters:permissions(v)
-	if hasField(v) then
+	if not hasField(v) then
 		self._permissions = {}
 	else
 		self:setPermissions(v or {})
@@ -116,17 +120,20 @@ function getters:permissions(i)
 end
 
 function getters:callback()
-	return self._callback
+	return self._callback ~= dummyFunc and self._callback or nil
 end
 
 --*[[ Defining Members Methods ]]
 
 function Command:setName(n)
-	local reged = (self._manager._commands[self._name] or {})._id == self._id
+	err(1, "setName", "Command", self)
+	err(2, "setName", "string", n)
 
-	if reged then self:unregister() end
-	self._name = err(1, "setName", "string", n)
-	if reged then self:register() end
+	local isRegistered = (self._manager._commands[self._name] or {})._id == self._id
+
+	if isRegistered then self._manager._commands[self._name or n] = nil end
+	self._name = n
+	if isRegistered then self:register() end
 
   return self
 end
@@ -145,13 +152,15 @@ function Command:setArguments(name, argType, shortflag, fullflag, eatArgs, optio
 		name = args.name or ""
 	end
 
+	if not self._arguments then self._arguments = {} end
+
 	if type(name) == "table" then
 		for argName, arg in pairs(name) do
 			if type(argName) == "number" then
-				self:setArguments(arg); return
+				self:setArguments(arg); return self
 			elseif type(argName) == "string" and type(arg) == "table" then
 				arg.name = arg.name or argName
-				self:setArguments(arg); return
+				self:setArguments(arg); return self
 			elseif type(argName) == "string" and type(arg) ~= "table" then
 				setArgs(name); break
 			end
@@ -181,45 +190,65 @@ end
 --- TODO: removeArguments
 
 function Command:setAliases(a)
+	err(1, "setAliases", "Command", self)
+	err(2, "setAliases", {"string", "table"}, a)
+
 	set(self, '_aliases', a)
   return self
 end
 
 function Command:removeAliases(a)
+	err(1, "setAliases", "Command", self)
+	err(2, "setAliases", {"string", "table"}, a)
+
 	set(self, '_aliases', a, true)
   return self
 end
 
 function Command:setPermissions(p)
+	err(1, "setPermissions", "Command", self)
+	err(2, "setPermissions", {"table", "string"}, p)
+
   set(self, '_permissions', p, false, true)
   return self
 end
 
 function Command:removePermissions(p)
+	err(1, "setPermissions", "Command", self)
+	err(2, "setPermissions", {"table", "string"}, p)
+
 	set(self, '_permissions', p, true)
   return self
 end
 
 function Command:setCallback(c)
-  self._callback = err(1, "setCallback", "function", c)
+	err(1, "setCallback", "Command", self, 2)
+	err(2, "setCallback", "function", c, 2)
+
+  self._callback = c
   return self
 end
 
 function Command:register()
-	self._manager:registerCommand(self)
+	err(1, "register", "Command", self)
+
+	self._manager._commands[self._name] = self
 	return self
 end
 
 function Command:unregister()
-  self._manager:unregisterCommand(self)
+	err(1, "unregister", "Command", self)
+		p(self._name)
+  self._manager._commands[self._name] = nil
 	return self
 end
 
 function Command:hasPermissions(member, channel)
-	err(1, "hasPermissions", {"Message", "Member"}, member)
+	err(1, 'hasPermissions', "Command", self)
+	err(2, "hasPermissions", {"Message", "Member"}, member)
 	channel = member.channel or channel
 	member = member.member or member
-	err(2, "hasPermissions", {"GuildTextChannel", "PrivateChannel"}, channel)
+	err(3, "hasPermissions", {"GuildTextChannel", "PrivateChannel"}, channel)
 
 	-- Is it a PrivateChannel?
 	if not member or not member.guild then return true end
