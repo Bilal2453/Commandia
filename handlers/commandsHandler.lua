@@ -113,7 +113,6 @@ return function (manager)
       manager._commands[n] = r
     elseif not r and cb then
       manager._commands[n] = manager:createCommand(n, cb, perms, aliases, args, false)
-      p(aliases, manager._commands[n].arguments)
     elseif next(g) then
       log(1, n, 'A callback is required but got no callback '..
         '(you can either define a global "callback", and/or return a function value. See wiki for more info.)'

@@ -239,7 +239,6 @@ end
 
 function Command:unregister()
 	err(1, "unregister", "Command", self)
-		p(self._name)
   self._manager._commands[self._name] = nil
 	return self
 end
