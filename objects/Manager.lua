@@ -1,14 +1,14 @@
 local discordia = require 'discordia'
 local pathJoin = require 'pathjoin'.pathJoin
 local Command = require './Command'
-local err = require '../include/utils'.assertError
+local err = require '../include/utils/assertError'
 
 local commandsHandler = require '../handlers/commandsHandler'
 local messagesHandler = require '../handlers/messagesHandler'
 local typesHandler = require '../handlers/typesHandler'
 
 local class, ids = discordia.class, 0
-local Manager, getters, setters = class("CommandsManager")
+local Manager, getters, setters = class("CommandiaManager")
 
 local concat, insert = table.concat, table.insert
 local f = string.format
@@ -33,7 +33,7 @@ local OPTIONS_TYPES = {
   defaultTypesPath = "string",
   typesPath = "string",
 
-  dateTime = "string",
+  dateFormat = "string",
   logLevel = "number",
   client = "Client",
   prefix = {"string", "function"},
@@ -58,20 +58,20 @@ local OPTIONS_VALUES = {
   defaultTypesPath = pathJoin(module.dir, "../default-types/"),
   typesPath = "./types/",
 
-  dateTime = '%Y-%m-%d %X',
+  dateFormat = '%Y-%m-%d %X',
   logLevel = 4,
-  client = "NONE", -- NONE = nil
+  client = "NONE", -- NONE = no-defualt = required
   prefix = '!',
 }
 
 local argErr = function(name, dvalue, value, bs, l)
-  local baseMsg = 'Invalid "Manager" option "%s" (%s expected, got %s instead)'
+  local baseMsg = 'bad option "%s" for "Manager" (%s expected, got %s instead)'
   dvalue = type(dvalue) == 'table' and concat(dvalue, '|') or dvalue
 
   error(f(bs or baseMsg, name, dvalue, type(value)), l or 5)
 end
 
-local valueEqual = function(v1, v2)
+local optionEqual = function(v1, v2)
   if type(v1) == 'table' then
     for _, v in pairs(v1) do
       if v == v2 then return true end
@@ -88,7 +88,7 @@ local checkOptionsTypes = function(o)
     t = type(v)
     if v == 'NONE' then t, v = nil end
 
-    eqs = valueEqual(od[i], t)
+    eqs = optionEqual(od[i], t)
 
     if od[i] and (not eqs and t ~= 'table' or t == 'table' and od[i] ~= v.__name) then
       argErr(i, od[i], v)
@@ -99,12 +99,13 @@ end
 --*[[ Defining Class Constructor ]]
 
 function Manager:__init(options)
-  -- Check if the first argument type is valid
+  -- Check if the first argument's type is valid
   err(1, "Manager", {"table", "Client"}, options)
 
   local o = {} -- All valid options will be temp stored here
 
   -- Allow an optional type for the first argument
+  -- (Client or table)
   if options.__name == "Client" then
     options = {client = options}
   end
@@ -116,9 +117,9 @@ function Manager:__init(options)
     end
   end
 
-  -- Assign the default values if none are presented
+  -- Assign the default value for an optional option when no value
   for i, v in pairs(OPTIONS_VALUES) do
-    if options[i] ~= nil then o[i] = options[i]
+    if options[i] ~= nil then o[i] = options[i];
     else o[i] = v end
   end
 
@@ -126,16 +127,17 @@ function Manager:__init(options)
   checkOptionsTypes(o)
 
   -- Define every option as self._XXX
+  -- This might be changed when Discordia 3.x comes out
   for i, v in pairs(o) do
     self['_'..i] = v
   end
 
-  -- Store options that are already in use by the instance
+  -- Store the options that are already in use by this instance
   self._options = o
 
   -- Define static options
   self._discordia = discordia
-  self._logger = discordia.Logger(self._logLevel, self._dateTime)
+  self._logger = discordia.Logger(self._logLevel, self._dateFormat)
 
   -- Handle and load commands
   self._commands = {}
@@ -190,54 +192,61 @@ function setters:prefix(p)
   self:setPrefix(p)
 end
 
+-- TODO: changeOption method
+
 --*[[ Defining Members Methods ]]
 
-function Manager:createCommand(name, callback, perms, aliases, args)
-  err(1, "createCommand", "CommandsManager", self)
-  err(2, "createCommand", "string", name)
-  err(3, "createCommand", {"nil", "function"}, callback)
-  err(4, "createCommand", {"nil", "table", "string"}, perms)
-  err(5, "createCommand", {"nil", "table", "string"}, aliases)
-  err(6, "createCommand", {"nil", "table"}, args)
+function Manager:createCommand(name, callback, perms, aliases, args, autoreg)
+  err(1, "createCommand", "CommandiaManager", self, 2)
+  err(2, "createCommand", "string", name, 2)
+  err(3, "createCommand", {"nil", "function"}, callback, 2)
+  err(4, "createCommand", {"nil", "table", "string"}, perms, 2)
+  err(5, "createCommand", {"nil", "table", "string"}, aliases, 2)
+  err(6, "createCommand", {"nil", "table"}, args, 2)
+  err(7, "createCommand", {"nil", "boolean"}, autoreg, 2)
 
   local nc = Command(self, name, callback, perms, aliases, args)
-  self:registerCommand(nc)
+  if autoreg or autoreg == nil then self:registerCommand(nc) end
 
   return nc
 end
 
 function Manager:createCommands(cmds)
-  err(1, "createCommands", "CommandsManager", self)
+  err(1, "createCommands", "CommandiaManager", self)
   err(2, "createCommands", "table", cmds)
 
   for i, v in pairs(cmds) do
     self:createCommand(type(i) == 'number' and v.name or i,
-      v.callback, v.permissions, v.aliases, v.arguments)
+      v.callback, v.permissions, v.aliases, v.arguments
+    )
   end
 end
 
 function Manager:getCommand(n)
-  err(1, "getCommand", "CommandsManager", self)
+  err(1, "getCommand", "CommandiaManager", self)
   err(2, "getCommand", "string", n)
 
   return self._commands[n]
 end
 
 function Manager:registerCommand(c, n)
-  err(1, "registerCommand", "CommandsManager", self)
+  err(1, "registerCommand", "CommandiaManager", self)
   err(2, "registerCommand", "Command", c)
 
   local pd = self._commands[n or c.name]
   if pd and pd._id ~= c._id and pd.name == c.name then
-    error(f('Cannot register a new command when there is already a command registered with the same name "%s"', n or c.name))
+    error(f(
+      'Cannot register a new command when there\'s an already registered command with the same name "%s"',
+      n or c.name
+    ))
   end
 
   self._commands[n or c.name] = c
 end
 
 function Manager:unregisterCommand(n)
-  err(1, "removeCommands", "CommandsManager", self)
-  err(2, "removeCommands", {"string", "table"}, n)
+  err(1, "unregisterCommand", "CommandiaManager", self)
+  err(2, "unregisterCommand", {"string", "table"}, n)
   n = type(n) ~= 'table' and {n} or n
 
   for _, v in ipairs(n) do
@@ -250,7 +259,7 @@ function Manager:unregisterCommand(n)
 end
 
 function Manager:setPrefix(p)
-  err(1, "setPrefix", "CommandsManager", self)
+  err(1, "setPrefix", "CommandiaManager", self)
   err(2, "setPrefix", {"string", "function"}, p)
 
   self._prefix = p
