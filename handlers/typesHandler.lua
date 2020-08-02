@@ -1,7 +1,7 @@
 local discordia = require 'discordia'
-local loader = require '../include/loader'.loadDirec
+local loader = require '../include/loader'.loadDir
 
-local FILE_PATT = "%.type%.lua$"
+local FILE_PATT = "([^/]+)%.type%.lua$"
 local types = {}
 
 local function isSnowflake(id)
