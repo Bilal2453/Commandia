@@ -2,7 +2,8 @@ local new_fs_event = require 'uv'.new_fs_event
 local pathJoin = require 'pathjoin'.pathJoin
 local fs = require 'fs'
 
-local stat, exists, scandir, readfile, mkdir = fs.statSync, fs.existsSync, fs.scandirSync, fs.readFileSync, fs.mkdirSync
+local exists, readfile, mkdir = fs.existsSync, fs.readFileSync, fs.mkdirSync
+local stat, scandir = fs.statSync, fs.scandirSync
 
 local function call(c, ...)
 	if type(c) == "function" then
@@ -15,19 +16,27 @@ local function read(p, ...)
 		p = pathJoin(p, v)
 	end
 
-	local fileData, errmsg = readfile(p)
+	local data, err = readfile(p)
 
-	if not fileData then
-		return false, errmsg
+	if not data then
+		return false, err
 	end
 
-	return fileData
+	return data
+end
+
+local function copy(t)
+	local new = {}
+	for k, v in pairs(t) do
+		new[k] = v
+	end
+	return new
 end
 
 
-local function watch(path, callback)
-	local stats = {}
-	local oldStat = stat(path)
+local function watch(path, callback, events)
+	events = events or {}
+	local stats, oldStat = {}, stat(path)
 	local isFile = oldStat.type == 'file'
 	local function rPath(p, n) return isFile and p or pathJoin(p, n) end
 
@@ -44,26 +53,27 @@ local function watch(path, callback)
 	local fsEvent = new_fs_event()
 	fsEvent:start(path, {}, function(err, name, event)
 		if err then return end
+		local filePath = rPath(path, name)
 
 		if not event.change then
-			local newPath = rPath(path, name)
+			local newName = not events.patt and filePath or filePath:match(events.patt)
 
-			if not exists(newPath) then -- File Deleted?
-				stats[newPath] = nil -- Remove old stats
+			if not exists(filePath) and stats[filePath] then -- File Deleted?
+				stats[filePath] = nil -- Remove old stats
+				if newName then call(events.onDeleted, newName, name) end
 			else -- File Created?
-				stats[newPath] = stat(newPath) -- Add the new stats
+				stats[filePath] = stat(filePath) -- Add the new stats
+				if newName then call(events.onCreated, newName, name) end
 			end
 
 			return
 		end
 
-		local filePath = rPath(path, name)
 		local old = stats[filePath]
 		local new = stat(filePath)
 
-		stats[filePath] = new
-
 		if new.size ~= 0 and (old.mtime.sec ~= new.mtime.sec or old.mtime.nsec ~= new.mtime.nsec) then
+			stats[filePath] = new
 			return callback(name)
 		end
 	end)
@@ -71,53 +81,62 @@ local function watch(path, callback)
 	return fsEvent
 end
 
--- TODO: Better and Cleaner loader... this one is just ugly and buggy.
-local function loadDirec(direc, filesPattern, env, ops)
-	ops = ops or {}
-	local onReloaded = ops.onReloaded
-	local onUnload = ops.onUnload
-	local doWatch = ops.doWatch == nil and true or ops.doWatch
-	local onLoad = ops.onLoad
-	local onErr = ops.onErr
+local function loadDir(direc, loadingPatt, env, events)
+	events = events or {}
+	events.doWatch = events.doWatch == nil and true or events.doWatch
 
-	if not exists(direc) then mkdir(direc) end
+	if not exists(direc) then assert(mkdir(direc)) end
 
+	local envCopy = copy(env)
 	local function loadFile(name, first)
 		local filePath = pathJoin(direc, name)
-
 		local oName = name
-		name = name:gsub(filesPattern, '')
+		name = name:match(loadingPatt)
 
 		if not exists(filePath) then
-			call(onErr, name, ('Attempt to find "%s"'):format(name))
+			call(events.onErr, name, ('Attempt to find "%s"'):format(name))
 			return
 		end
 
-		call(onUnload, name)
+		call(events.onUnload, name)
 
-		local succ, result = read(filePath)
-		if not succ then
-			call(onErr, name, ('Attempt to read "%s" : %s'):format(filePath, result))
+		local chunkString, errReading = read(filePath)
+		if not chunkString then
+			call(events.onErr, name, ('Attempt to read "%s" : %s'):format(filePath, errReading))
 			return
 		end
 
-		local runtimeSuccess, loader, errMesg = call(load, succ, oName, 't', env)
-		succ, result = call(loader)
+		-- Refresh the env with a copy of the original one
+		-- The original copy does not have the user-defined globals & user-defined env
+		-- This is useful to erase user-defined env on reload, so in case the user
+		-- removed a global then reloaded, this code will make sure it is actually removed
+		if not first then
+			for k, _ in pairs(env) do
+				env[k] = envCopy[k]
+			end
+		end
+
+		local runtimeSuccess, loader, errMesg = call(load, chunkString, oName, 't', env)
+		if runtimeSuccess then call(events.onBeforeload, name, loader) end
+		local succ, result = call(loader)
 
 		runtimeSuccess = runtimeSuccess and loader
 		if not (runtimeSuccess and succ) then
 			local msg = (runtimeSuccess and result or loader or errMesg)
-			call(onErr, name, msg); return
+			call(events.onErr, name, msg); return
 		end
 
-		call(onLoad, name, result)
-		if not first then call(onReloaded, name) end
+		local _, r = call(events.onLoad, name, result, loader)
+		if r == false then return end -- a loading error, don't continue
+
+		if not first then call(events.onReloaded, name);
+		else call(events.onFirstload, name) end
 	end
 
 	local function loadAll(...)
-		for filePath in scandir(direc) do
-			if filePath:find(filesPattern) then
-				loadFile(filePath, ...)
+		for path in scandir(direc) do
+			if path:find(loadingPatt) then
+				loadFile(path, ...)
 			end
 		end
 	end
@@ -125,18 +144,28 @@ local function loadDirec(direc, filesPattern, env, ops)
 	loadAll(true)
 
 	-- Watch for changes and reload
-	if doWatch then
+	if events.doWatch then
+		events.patt = loadingPatt
+
+		local oldOnCreated = events.onCreated
+		events.onCreated = function (n, fullname)
+			loadFile(fullname, true)
+			if type(oldOnCreated) == 'function' then
+				return oldOnCreated(n, fullname)
+			end
+		end
+
 		watch(direc, function(name)
-			if not name:find(filesPattern) then return end
+			if not name:find(loadingPatt) then return end
 			if not exists(pathJoin(direc, name)) then return end
 
 			loadFile(name)
-		end)
+		end, events)
 	end
 end
 
 
 return {
-	loadDirec = loadDirec,
+	loadDir = loadDir,
 	watch = watch
 }
