@@ -4,6 +4,7 @@ local ids = 0
 
 local dummyFunc = function() end
 
+--- TODO: `get` should return a key-value table when invert is enabled
 local function get(self, property, index)
 	local values = {}
 	for k, v in pairs(self[property] or {}) do
@@ -54,7 +55,7 @@ local Command, getters, setters = discordia.class("Command")
 --*[[ Defining Class Constructor ]]
 
 function Command:__init(manager, name, callback, perms, aliases, args)
-	err(1, "Command", "CommandsManager", manager, 3)
+	err(1, "Command", "CommandiaManager", manager, 3)
 
   self._manager = manager
 	self:setName(name)
@@ -98,7 +99,7 @@ function setters:permissions(v)
 end
 
 function setters:callback(v)
-	self:setCallback(v or function() end)
+	self:setCallback(v or dummyFunc)
 end
 
 --*[[ Defining Class Getters ]]
@@ -138,7 +139,7 @@ function Command:setName(n)
   return self
 end
 
---- TODO: Simplify this method as much as possible and needed. it's silly!!
+--- TODO: A completly new arguments system that uses flags, options, positioned args and categories
 function Command:setArguments(name, argType, shortflag, fullflag, eatArgs, optional, output)
 	name = err(2, "setArguments", {"string", "table"}, name)
 
