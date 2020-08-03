@@ -38,5 +38,7 @@
 
 * README?: Add more examples.
 
+* messagesHandler: a full re-write.
+
 ### Bugs
 * *Missing Tests*.
