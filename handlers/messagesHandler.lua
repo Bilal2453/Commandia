@@ -233,8 +233,8 @@ end
 return function(manager, msg)
 	if not manager or not msg then return end
 	if not manager._respondToBots and msg.author.bot then return end
-	if msg.author == manager._client.user then return end
-	if not manager._respondToDMs and not msg.guild then return end
+	if msg.author.id == manager._client.user.id then return end
+	if not manager._respondToDMs and msg.channel.type ~= 0 then return end
 
 	local cmdName = split(msg.content)[1]
 	if not cmdName then return end
