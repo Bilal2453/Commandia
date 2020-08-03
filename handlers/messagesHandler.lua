@@ -6,7 +6,6 @@ local f = string.format
 
 local baseErrorMsg = 'Error executing command\'s callback "%s" : %s'
 
--- Parsing
 
 local function getFlag(n, c)
 	for _, a in pairs(c.arguments) do
@@ -22,43 +21,40 @@ local function split(str)
 	local args = {}
 
 	for i in gmatch(str, [[(?|"(.+?)"|'(.+?)'|(\S+))]]) do
-		table.insert(args, i)
+		insert(args, i)
 	end
 
 	return args
 end
 
 local function argsParser(str, command)
-	local splitMesg = split(str)
-	remove(splitMesg, 1)
+	local splitMsg = split(str)
+	remove(splitMsg, 1)
 
 	local args = {}
 	local flags = {}
 
 	local function valid(i, q)
-		return type(splitMesg[i + q]) == 'string' and not splitMesg[i + q]:match('^(%-%-?)')
+		return type(splitMsg[i + q]) == 'string' and not splitMsg[i + q]:match('^(%-%-?)')
 	end
 
 	local lastIndexedFlagArg = 0
 	local fm, name, flag
 
-	for i, v in ipairs(splitMesg) do
+	for i, v in ipairs(splitMsg) do
 		fm, name = v:match('^(%-%-?)(%S+)')
 
 		if fm then
 			flag = getFlag(name, command)
-
 			if not flag then return nil, fm.. name end
 
 			flags[flag.name] = {}
 
-			for q = 1, (flag.eatArgs == -1 and #splitMesg) or flag.eatArgs or 1 do
-				if valid(i, q) then
-					insert(flags[flag.name], splitMesg[i + q])
-					lastIndexedFlagArg = i + q
-				else
-					break
-				end
+			for q = 1, (flag.eatArgs == -1 and #splitMsg) or flag.eatArgs or 1 do
+				if not valid(i, q) then break end
+
+				insert(flags[flag.name], splitMsg[i + q])
+				lastIndexedFlagArg = i + q
 			end
 
 		elseif i > lastIndexedFlagArg then
@@ -72,20 +68,29 @@ end
 -- Preparing for calling commands
 
 local function reply(msg, m, baseMsg, formats)
-	local i = m[formats.index]
+	local index = m[formats.index]
 	formats.index = nil
 
-	if not i then return
-	elseif type(i) == 'string' then baseMsg = i
+	if not index then
+		return
+	elseif type(index) == 'string' then
+		baseMsg = index
 	end
 
-	formats.m = m._replyWithMentionUser and (formats.m and formats.m or msg.member.mentionString).. ' ' or ''
+	if m._replyWithMentionUser and formats.m then
+		formats.m = formats.m.. ' '
+	elseif m._replyWithMentionUser and (msg.member or {}).mentionString then
+		formats.m = msg.member.mentionString.. ' '
+	else
+		formats.m = ''
+	end
+
 	if not baseMsg:find('%m', 1, true) then baseMsg = '%m'..baseMsg end
 
 	baseMsg = baseMsg:gsub('%%(.)', formats)
 	baseMsg = m._replyHeader.. baseMsg
 
-	msg:reply(baseMsg)
+	pcall(msg.reply, msg, baseMsg)
 
 	local sr = m._replyWithReactionOnErr
 	sr = sr and (type(sr) == 'string' and sr or '❌')
@@ -94,25 +99,29 @@ end
 
 local function fi(t, c, ...)
 	local success, e
+
+	-- Call the callback at least once even when the table is empty
+	if not next(t) then
+		success, e = pcall(c, nil, ...)
+		if not success then return false, e end
+
+		insert(t, e)
+		return true
+	end
+
 	for k, v in pairs(t) do
 		success, e = pcall(c, v, ...)
 		if not success then return false, e end
 		t[k] = e
 	end
 
-	-- Call the callback at least once even when the table is empty
-	if not next(t) and success == nil then
-		success, e = pcall(c, nil, ...)
-		if not success then return false, e end
-		insert(t, e)
-	end
-
 	return true
 end
 
 local function callCommand(command, msg)
-	if type(command) ~= 'table'
-		or command.__name ~= 'Command' then return end
+	if type(command) ~= 'table' or command.__name ~= 'Command' then
+		return
+	end
 
 	local splitMsg = split(msg.content)
 	remove(splitMsg, 1)
@@ -120,7 +129,7 @@ local function callCommand(command, msg)
 	local commandsArgs, err = argsParser(msg.content, command)
 
 	local manager = command._manager
-	local logger = command._manager._logger
+	local logger = manager._logger
 	local types = manager._types
 
 	-- One of the inputed arguments can't be found
@@ -149,7 +158,10 @@ local function callCommand(command, msg)
 			if sucs then
 				flagargs = errmsg
 			else
-				return nil, f('Error in "%s" Flag\'s output handler : %s', flagname, errmsg), 1
+				return nil, f('Error in "%s" output callback : %s',
+					flagname,
+					errmsg
+				), 1
 			end
 		end
 
@@ -157,12 +169,22 @@ local function callCommand(command, msg)
 		if ty then
 
 			sucs, errmsg = fi(flagargs, ty, msg, manager)
-			if not sucs then return nil, f('Error in "%s" type handler : %s', tyn, errmsg), 1 end
+			if not sucs then
+				return nil, f('Error in "%s" type handler : %s',
+					tyn,
+					errmsg
+				), 1
+			end
 
 		elseif type(tyn) == 'function' then
 
 			sucs, errmsg = fi(flagargs, tyn, msg, manager)
-			if not sucs then return nil, f('Error in "%s" type\'s custom handler : %s', flagname, errmsg), 1 end
+			if not sucs then
+				return nil, f('Error in "%s" type\'s custom handler : %s',
+					flagname,
+					errmsg
+				), 1
+			end
 
 		end
 
@@ -205,8 +227,7 @@ local function log(logger, s, l, m, ...)
 	if not s and m then logger:log(l, m, ...) end
 end
 
--- pr = getPerfix
-local function pr(prefix, msg, logger)
+local function getPrefix(prefix, msg, logger)
 	if type(prefix) == 'function' then
 		local s, e = pcall(prefix, msg.guild, msg)
 		if not s then
@@ -230,6 +251,7 @@ end
 
 -- The initial callback
 
+--- TODO: Cleaning
 return function(manager, msg)
 	if not manager or not msg then return end
 	if not manager._respondToBots and msg.author.bot then return end
@@ -239,7 +261,7 @@ return function(manager, msg)
 	local cmdName = split(msg.content)[1]
 	if not cmdName then return end
 
-	local prefix = pr(manager._prefix, msg, manager._logger)
+	local prefix = getPrefix(manager._prefix, msg, manager._logger)
 	if not cmdName:find(prefix, 1, true) then return end
 	cmdName = cmdName:sub(#prefix+1) -- subtract the prefix from the command name. can be cheaper than not subtracting
 
