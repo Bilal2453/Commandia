@@ -46,7 +46,7 @@ local function hasField(t)
 	return type(t) == 'table' and next(t)
 end
 
--- if the object is already defined return that
+-- return the already defined object if any
 local definedCommand = discordia.class.classes.Command
 if definedCommand then return definedCommand end
 
@@ -243,6 +243,7 @@ function Command:unregister()
 	return self
 end
 
+--- TODO: Enhance performance
 function Command:hasPermissions(member, channel)
 	err(1, 'hasPermissions', "Command", self)
 	err(2, "hasPermissions", {"Message", "Member"}, member)
@@ -250,8 +251,11 @@ function Command:hasPermissions(member, channel)
 	member = member.member or member
 	err(3, "hasPermissions", {"GuildTextChannel", "PrivateChannel"}, channel)
 
-	-- Is it a PrivateChannel?
+	-- Always return true on a PrivateChannel
 	if not member or not member.guild then return true end
+
+	local memberPerms = member:getPermissions(channel)
+	local commandsPerms = self._permissions
 
 	local enums = discordia.enums.permission
 	local isEnum = function (e)
@@ -260,8 +264,6 @@ function Command:hasPermissions(member, channel)
 		end
 	end
 
-	local commandsPerms = self._permissions
-	local memberPerms = member:getPermissions(channel)
 	--- TODO: Allow to the user to tinker with the customized perms + add their own
 	local specialPerms = {
 		["guildOwner"] = channel.guild.owner.id == member.id,
@@ -278,7 +280,7 @@ function Command:hasPermissions(member, channel)
 	end
 
 	-- Checking command's perms against member's
-	-- Check if the member does have official discord permissions (if any)
+	-- Check if the member does have required permissions (if any)
 	for perm, v in pairs(commandsPerms) do
 		if isEnum(perm) and not isValid(memberPerms:has(perm), v) then
 			return false
