@@ -7,7 +7,8 @@
   license = "MIT"
   author = { name = "Bilal2453" }
 ]]
+
 return {
   Manager = require('./objects/Manager'),
-  VERSION = '0.0.1-ALPHA'
+  version = '0.0.1'
 }
