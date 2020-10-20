@@ -1,8 +1,11 @@
-local lpeg = require 'lpeg'
+local lpeg = require('lpeg')
 local P, C, S, R, Ct = lpeg.P, lpeg.C, lpeg.S, lpeg.R, lpeg.Ct
 
 local lexer
 do
+  -- TODO: Clean this grammar mess, might use `re` instead?
+  -- TODO: Allow for recurve flags, ex: `-abc` where it resolves to `-a -b -c`
+
   local sep, space = S'=, ', P' '^0
   local prefix = space * P'!'
   local letter = R 'az' + R 'AZ'
@@ -89,20 +92,22 @@ local function consume(amount, part, d, size, i)
   return consumed
 end
 
-local function buildHandlers(split, command, parsed)
+local function buildHandlers(tokens, command, parsed)
+  local cmdTerm =  tokens._category and 'category' or 'command'
+
   local function handleCategory()
-    local firstArgument = (split[1] or {})[1]
+    local firstArgument = (tokens[1] or {})[1]
     local cat = firstArgument and command.categories[firstArgument]
 
     if not (cat or type(cat) ~= 'string' or command.categories.optional) then
       if firstArgument then
-        return err('No such category "%s" for command "%s"', firstArgument, command.name)
+        return err('No such category "%s" for %s "%s"', firstArgument, cmdTerm, command.name)
       else
-        return err('Category is required for command "%s"', command.name)
+        return err('Category is required for %s "%s"', cmdTerm, command.name)
       end
     elseif cat then
       parsed.category = cat.name
-      table.remove(split[1], 1)
+      table.remove(tokens[1], 1)
     end
 
     return true
@@ -111,14 +116,14 @@ local function buildHandlers(split, command, parsed)
   local function handleFlag(part, flagPart)
     local flag = findFlag(command, flagPart)
     if not flag then
-      return err('No such flag "%s" for command "%s"', flagPart[2], command.name)
+      return err('No such flag "%s" for %s "%s"', flagPart[2], cmdTerm, command.name)
     end
 
     local partSize = #part-1
     part[1] = nil
 
     if partSize < flag.requires then
-      return err('Not enough values for flag "%s" of command "%s"', flag.name, command.name)
+      return err('Not enough values for flag "%s" of %s "%s"', flag.name, cmdTerm, command.name)
     end
 
     local consumed = consume(flag.consumes, part, 1, partSize, 2)
@@ -134,7 +139,7 @@ local function buildHandlers(split, command, parsed)
     local argIndex = parsed.arguments.n + 1
 
     if argIndex > #command.arguments then
-      return err('Unknown positioned argument "%s". Command "%s" can accept #%d argument(s), got %d argument',
+      return err('Unknown positioned argument "%s" for %s "%s" accepts #%d argument(s), got %d argument',
         part[1], command.name, #command.arguments, argIndex
       )
     end
@@ -182,31 +187,46 @@ local function buildHandlers(split, command, parsed)
 end
 
 -----------------------------------------------------
+-- TODO: Converting inputs types into their user-defined types
 
 local function parse(str, commands)
-  local split = lexer:match(str)
-  if not split then return nil end
+  local tokens = type(str) == 'string' and lexer:match(str) or str
+  if type(tokens) ~= 'table' then return nil end
 
-  local command = commands[split.command]
-  if not command then return err('Command "%s" not found', split.command) end
+  local command = commands[tokens.command]
+  if not command then return err('Command "%s" not found', tokens.command) end
 
   -- The final output of the parser
   local parsed = {
     arguments = {n = 0},
-    flags = {n = 0}
+    category = tokens._category,
+    flags = {n = 0},
   }
 
-  -- Build the actual handling logic
-  local handleCategory, handleFlag, handleArgument = buildHandlers(split, command, parsed)
+  -- Build the actual parsing handlers
+  local handleCategory, handleFlag, handleArgument = buildHandlers(tokens, command, parsed)
 
   -- Handle categories and possible errors
   local success, msg = handleCategory()
   if not success then return false, msg end
 
+  -- Parse the category as a separate command allowing for recursion
+  if parsed.category and not tokens._category then
+    local cat = command.categories[parsed.category]
+    tokens.command = cat.name
+    tokens._category = cat.name
+
+    return parse(tokens, {
+      [cat.name] = cat
+    })
+  end
+
+  local cmdTerm =  tokens._category and 'category' or 'command'
   local part, av
+
   -- Main consuming loop
-  for pi = 1, #split do
-    part = split[pi]
+  for pi = 1, #tokens do
+    part = tokens[pi]
 
     for _ = 1, #part do
       av = part[1]
@@ -214,10 +234,10 @@ local function parse(str, commands)
       -- Ignore any holes
       if av == nil then goto continue end
 
-      -- Consume the value and handle errors
+      -- Consume the value and handle possible errors
       if type(av) == 'table' then -- it is a flag
         success, msg = handleFlag(part, av)
-      else -- it is an argument or an argument value
+      else -- it is an argument or an argument's value
         success, msg = handleArgument(part)
       end
       if not success then return false, msg end
@@ -230,7 +250,7 @@ local function parse(str, commands)
   local flags = command.flags
   for i=1, #flags do
     if flags[i].required and not parsed.flags[flags[i].name] then
-      return err('Flag "%s" is required for command "%s"', flags[i].name, command.name)
+      return err('Flag "%s" is required for %s "%s"', flags[i].name, cmdTerm, command.name)
     end
   end
 
@@ -240,7 +260,7 @@ local function parse(str, commands)
     ai = arguments[i]
 
     if ai.required and not parsed.arguments[ai.name] then
-      return err('The positioned argument #%d is required for command "%s"', i, command.name)
+      return err('The positioned argument #%d is required for %s "%s"', i, cmdTerm, command.name)
     elseif ai.required and #parsed.arguments[ai.name] < ai.requires then
       return err('The positioned argument #%d requires %d values, got only %d value(s)', i, ai.requires, #parsed.arguments[ai.name])
     end
