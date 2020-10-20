@@ -1,8 +1,8 @@
-types
 commands
+.vscode
+types
+tests
 docs
-
-mainTesting.lua
 
 *.log
 *.code-workspace
