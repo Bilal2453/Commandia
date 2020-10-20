@@ -1,7 +1,9 @@
 # Commandia
+
 A complete and simple to use commands manager for the library Discordia
 
 # TODOs
+
 1. Documentations
 2. Command cooldown
 3. Commands Categories
@@ -9,6 +11,7 @@ A complete and simple to use commands manager for the library Discordia
 5. Auto prompting for invalid arguments
 
 # Features
+
 - Commands hot-reloading (reload on changes)
 - Plain command names and aliases
 - Advanced arguments system
@@ -28,7 +31,9 @@ A complete and simple to use commands manager for the library Discordia
 - All paths are customizable
 
 # Simple example
+
 Main File:
+
 ```lua
 local discordia = require("discordia")
 local client = discordia.Client()
@@ -43,6 +48,7 @@ client:run("Bot TOKEN") -- Replace TOKEN by your bot token
 ```
 
 After running this code -through `luvit main.lua`- you will notice new directories, go to your `commands` directory and create a new file named `hello.command.lua`, and add the following code:
+
 ```lua
 return function(self, msg)
   msg:reply("Oh Hello ".. msg.member.mentionString)
