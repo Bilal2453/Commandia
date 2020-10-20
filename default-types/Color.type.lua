@@ -1,8 +1,10 @@
 return function(v, _, m)
+  local prefix = '%s*%(%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*%)%s*'
+
   local hex = v:match('#?%x+')
-  local RGB = {v:match('[rRgGbB]%s*%(%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*%)%s*')}
-  local HSL = {v:match('[hHsSlL]%s*%(%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*%)%s*')}
-  local HSV = {v:match('[hHsSvV]%s*%(%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*,%s*([%-%d%.]+)%s*%)%s*')}
+  local RGB = {v:match('[rRgGbB]'.. prefix)}
+  local HSL = {v:match('[hHsSlL]'.. prefix)}
+  local HSV = {v:match('[hHsSvV]'.. prefix)}
   local num = tonumber(v:match('%S+'))
 
   local function sc(...)
@@ -11,7 +13,6 @@ return function(v, _, m)
   end
 
   local Color, c = m._discordia.Color
-
   if #RGB == 3 then
     c = sc(Color.fromRGB, RGB[1], RGB[2], RGB[3])
   elseif #HSL == 3 then
@@ -26,5 +27,5 @@ return function(v, _, m)
     return
   end
 
-  return c and c or nil
+  return c or nil
 end

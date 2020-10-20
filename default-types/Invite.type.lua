@@ -1,8 +1,8 @@
 return function(v, msg)
   local plain = v:match('[a-zA-Z0-9]+')
-  local surl = v:match('discord%.gg/([a-zA-Z0-9]+)')
-  local furl = v:match('https?://discord%.gg/([a-zA-Z0-9]+)')
-  local code = plain or furl or surl
+  local short = v:match('discord%.gg/([a-zA-Z0-9]+)')
+  local long  = v:match('https?://discord%.gg/([a-zA-Z0-9]+)')
+  local code  = plain or long or short
 
   return msg.client:getInvite(code)
 end

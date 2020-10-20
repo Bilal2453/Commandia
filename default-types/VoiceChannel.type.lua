@@ -1,4 +1,6 @@
 return function(v, msg)
+  if not msg.guild then return end
+
   local channelMention = v:match('<#(%d+)>') -- Currently possible, but not mentionable
 	local channelName = v:match('#?([%S%-]+)')
   local channelID = v:match('%d+')
@@ -15,6 +17,6 @@ return function(v, msg)
 		end)
 	end
 
-  local types = {GuildVoiceChannel = true} -- That should be all? probably...
+  local types = {GuildVoiceChannel = true} -- That should be all supported types? probably...
   return c and types[c.__name] and c
 end

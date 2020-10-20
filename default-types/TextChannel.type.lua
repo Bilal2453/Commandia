@@ -1,4 +1,6 @@
 return function(v, msg)
+  if not msg.guild then return end
+
   local channelMention = v:match('<#(%d+)>')
 	local channelName = v:match('[%S%-]+')
   local channelID = v:match('%d+')

@@ -5,7 +5,7 @@ return function(v, msg)
   local id = roleMention or roleID
 
   if name and not id and msg.guild then
-    return msg.guild.roles:find(function(r)
+    return msg.guild and msg.guild.roles:find(function(r)
       return r.name:lower():find(name:lower(), 1, true)
     end)
   end

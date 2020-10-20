@@ -1,4 +1,5 @@
 return function(v, msg)
+	-- TODO: support Canary and other clients links
 	local guildID, channelID, messageIDLink = v:match('https?://discord[app]*%.com/channels/(%d+)/(%d+)/(%d+)')
 	local messageID = v:match('%d+')
 
@@ -8,11 +9,10 @@ return function(v, msg)
 	local guild = msg.guild
 	local c = msg.channel
 
-	if channelID ~= c.id or guild.id ~= guildID then
+	if channelID ~= c.id or (guild and guild.id ~= guildID) then
 		if isSnowflake(channelID) then
 			c = msg.client:getChannel(channelID)
 		end
-
 		if not c then return end
 	end
 
