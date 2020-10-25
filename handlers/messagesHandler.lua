@@ -1,282 +1,81 @@
-local assertCmd = require '../include/utils'.assertCmd
-local gmatch = require 'rex'.gmatch
+local parse = require('../include/parser')
 
-local remove, insert = table.remove, table.insert
+local errMsg = 'Error running command "%s" : %s.'
 local f = string.format
+local logger, mgr, msg
 
-local baseErrorMsg = 'Error executing command\'s callback "%s" : %s'
+local function call(cmd, flags, args)
+  if type(cmd) ~= 'table' or cmd.__name ~= 'Command' then return end
 
+  if not cmd:hasPermissions(msg) then
+    return false, f(errMsg, cmd.name, "Not enough permissions")
+  end
 
-local function getFlag(n, c)
-	for _, a in pairs(c.arguments) do
-		for _, v in pairs(a) do
-			if v == n then
-				return a
-			end
-		end
-	end
+  local success, failure, err = pcall(cmd.callback, cmd, msg, flags, args)
+
+  if not success then
+    if cmd._manager._unregisterCommandOnErr then
+			cmd:unregister()
+			logger:log(2, 'Command "%s" has been unloaded due to an error', cmd.name)
+    end
+    return false, f(errMsg, cmd.name, failure)
+  elseif not failure then
+    return false, f(errMsg, cmd.name, err)
+  end
+
+  return true
 end
 
-local function split(str)
-	local args = {}
+local function replySuccess(success, info)
+  local me = msg.guild.me or msg.guild:getMember(msg.client.user.id)
+  local reactions = {
+    [true]  = type(mgr._replyWithReactionOnErr) == 'string' and mgr._replyWithReactionOnErr or '\u{2705}', -- 0x2705 = WHITE_HEAVY_CHECK_MARK
+    [false] = '\u{274c}' -- 0x274c = CROSS_MARK
+  }
 
-	for i in gmatch(str, [[(?|"(.+?)"|'(.+?)'|(\S+))]]) do
-		insert(args, i)
-	end
+  if me:hasPermissions('addReactions') and mgr._replyWithReactionOnErr then
+    msg:addReaction(reactions[success])
+  end
 
-	return args
+  if me:hasPermissions('sendMessages') and info then
+    msg:reply(mgr._replyHeader .. info)
+  end
 end
 
-local function argsParser(str, command)
-	local splitMsg = split(str)
-	remove(splitMsg, 1)
+-- TODO: Make the Manager options that accepts a string value and boolean one
+-- to be able to use the custom string when it is not a boolean.
 
-	local args = {}
-	local flags = {}
+return function (mgr, msg)
+  --- Initial checks. May depend on user configurations.
 
-	local function valid(i, q)
-		return type(splitMsg[i + q]) == 'string' and not splitMsg[i + q]:match('^(%-%-?)')
-	end
+  -- Never respond to the current bot messages
+	if mgr._client.user.id == msg.author.id then return end
+  -- If the bot should not respond to other bots, return
+  if not mgr._respondToBots and msg.author.bot then return end
+  -- If the bot should not respond to DMs, return
+  if not mgr._respondToDMs and msg.channel.type == 1 then return end
 
-	local lastIndexedFlagArg = 0
-	local fm, name, flag
+  -- Expose to other helper functions as up-values
+  logger, mgr, msg = mgr._logger, mgr, msg
 
-	for i, v in ipairs(splitMsg) do
-		fm, name = v:match('^(%-%-?)(%S+)')
+  -- Parse the message
+	local parsed, cmd = parse(msg.content, mgr._commands)
+  if parsed == false and cmd then -- Parsing error
+    -- TODO: Expose the parsing errors to here, so we can be able to decide
+    -- what errors to reply and what to not depending on user configurations.
+    -- Maybe returning an error code too?
+    replySuccess(false, cmd)
+  elseif not cmd then -- should never happen
+    if mgr.replyToUndefinedCommands then
+      replySuccess(false, f(errMsg, cmd.name, 'Command does not exists.'))
+    end
+  end
 
-		if fm then
-			flag = getFlag(name, command)
-			if not flag then return nil, fm.. name end
-
-			flags[flag.name] = {}
-
-			for q = 1, (flag.eatArgs == -1 and #splitMsg) or flag.eatArgs or 1 do
-				if not valid(i, q) then break end
-
-				insert(flags[flag.name], splitMsg[i + q])
-				lastIndexedFlagArg = i + q
-			end
-
-		elseif i > lastIndexedFlagArg then
-			insert(args, v)
-		end
-	end
-
-	return {flags = flags, args = args}
-end
-
--- Preparing for calling commands
-
-local function reply(msg, m, baseMsg, formats)
-	local index = m[formats.index]
-	formats.index = nil
-
-	if not index then
-		return
-	elseif type(index) == 'string' then
-		baseMsg = index
-	end
-
-	if m._replyWithMentionUser and formats.m then
-		formats.m = formats.m.. ' '
-	elseif m._replyWithMentionUser and (msg.member or {}).mentionString then
-		formats.m = msg.member.mentionString.. ' '
-	else
-		formats.m = ''
-	end
-
-	if not baseMsg:find('%m', 1, true) then baseMsg = '%m'..baseMsg end
-
-	baseMsg = baseMsg:gsub('%%(.)', formats)
-	baseMsg = m._replyHeader.. baseMsg
-
-	pcall(msg.reply, msg, baseMsg)
-
-	local sr = m._replyWithReactionOnErr
-	sr = sr and (type(sr) == 'string' and sr or '❌')
-	if sr then pcall(msg.addReaction, msg, sr) end
-end
-
-local function fi(t, c, ...)
-	local success, e
-
-	-- Call the callback at least once even when the table is empty
-	if not next(t) then
-		success, e = pcall(c, nil, ...)
-		if not success then return false, e end
-
-		insert(t, e)
-		return true
-	end
-
-	for k, v in pairs(t) do
-		success, e = pcall(c, v, ...)
-		if not success then return false, e end
-		t[k] = e
-	end
-
-	return true
-end
-
-local function callCommand(command, msg)
-	if type(command) ~= 'table' or command.__name ~= 'Command' then
-		return
-	end
-
-	local splitMsg = split(msg.content)
-	remove(splitMsg, 1)
-
-	local commandsArgs, err = argsParser(msg.content, command)
-
-	local manager = command._manager
-	local logger = manager._logger
-	local types = manager._types
-
-	-- One of the inputed arguments can't be found
-	if not commandsArgs and err then
-		reply(msg, manager, 'Unknown command\'s flag `%f`', {
-			index = "_replyToUndefinedArguments",
-			f = err
-		})
-
-		return
-	end
-
-	local flags = commandsArgs.flags
-	local args = commandsArgs.args
-
-	-- Process and convert the arguments to their assigned types
-	local flag, sucs, errmsg, tyn, ty
-	for flagname, flagargs in pairs(flags) do
-		flag = getFlag(flagname, command)
-
-		-- Call the 'output' callback if any
-		-- meant to format the data before the type conversion
-		if type(flag.output) == 'function' then
-			sucs, errmsg = pcall(flag.output, flagargs)
-
-			if sucs then
-				flagargs = errmsg
-			else
-				return nil, f('Error in "%s" output callback : %s',
-					flagname,
-					errmsg
-				), 1
-			end
-		end
-
-		tyn, ty = flag.type, types[flag.type]
-		if ty then
-
-			sucs, errmsg = fi(flagargs, ty, msg, manager)
-			if not sucs then
-				return nil, f('Error in "%s" type handler : %s',
-					tyn,
-					errmsg
-				), 1
-			end
-
-		elseif type(tyn) == 'function' then
-
-			sucs, errmsg = fi(flagargs, tyn, msg, manager)
-			if not sucs then
-				return nil, f('Error in "%s" type\'s custom handler : %s',
-					flagname,
-					errmsg
-				), 1
-			end
-
-		end
-
-		if #flagargs <= 1 then flags[flagname] = flagargs[1] end
-	end
-
-	local s, e, m
-	if command:hasPermissions(msg) then
-		s, e, m = pcall(command.callback, command, msg, flags, args, splitMsg)
-	else
-		reply(msg, manager, 'You don\'t have enough permissions to use "%c" command', {
-			index = "_replyToUnauthorized",
-			c = command.name
-		})
-		return true
-	end
-
-	if not s then
-		if command._manager._unregisterCommandOnErr then
-			command:unregister()
-			logger:log(2, 'Command "%s" has been unloaded due to an error', command.name)
-		end
-
-		return nil, f(baseErrorMsg, command.name, e)
-			or f('Unknown error while executing "%s" command', command.name), 1
-	end
-
-	if e then
-		assertCmd(true, m, msg)
-	elseif e ~= nil or not e and m then
-		assertCmd(tostring(m), msg)
-	end
-
-	return true
-end
-
--- Actual command calling
-
-local function log(logger, s, l, m, ...)
-	if not s and m then logger:log(l, m, ...) end
-end
-
-local function getPrefix(prefix, msg, logger)
-	if type(prefix) == 'function' then
-		local s, e = pcall(prefix, msg.guild, msg)
-		if not s then
-			logger:log(1, 'Error calling prefix\'s callback : %s', e)
-		else
-			return e
-		end
-	else
-		return prefix
-	end
-end
-
-local function call(name, msg, m, command, n)
-	if name == (n or command.name) then
-		local succ, err, level = callCommand(command, msg)
-
-		log(m._logger, succ, level, err)
-		return true
-	end
-end
-
--- The initial callback
-
---- TODO: Cleaning
-return function(manager, msg)
-	if not manager or not msg then return end
-	if not manager._respondToBots and msg.author.bot then return end
-	if msg.author.id == manager._client.user.id then return end
-	if not manager._respondToDMs and msg.channel.type ~= 0 then return end
-
-	local cmdName = split(msg.content)[1]
-	if not cmdName then return end
-
-	local prefix = getPrefix(manager._prefix, msg, manager._logger)
-	if not cmdName:find(prefix, 1, true) then return end
-	cmdName = cmdName:sub(#prefix+1) -- subtract the prefix from the command name. can be cheaper than not subtracting
-
-	for _, command in pairs(manager._commands) do
-		if #command.aliases < 1 then
-			if call(cmdName, msg, manager, command) then return end
-		else
-			for _, name in pairs(command.aliases or {}) do
-				if call(cmdName, msg, manager, command, name) then return end
-			end
-		end
-	end
-
-	reply(msg, manager, 'Cannot find "%c" command', {
-		index = "_replyToUndefinedCommands",
-		c = cmdName
-	})
+  -- Execute the command, and handle responses
+  local success, err = call(cmd, parsed.flags, parsed.args)
+  if not success then
+    replySuccess(false, err)
+  else
+    replySuccess(true)
+  end
 end
