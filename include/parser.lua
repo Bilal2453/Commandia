@@ -4,7 +4,6 @@ local P, C, S, R, Ct = lpeg.P, lpeg.C, lpeg.S, lpeg.R, lpeg.Ct
 local lexer
 do
   -- TODO: Clean this grammar mess, might use `re` instead?
-  -- TODO: Allow for recurve flags, ex: `-abc` where it resolves to `-a -b -c`
 
   local sep, space = S'=, ', P' '^0
   local prefix = space * P'!'
@@ -187,7 +186,9 @@ local function buildHandlers(tokens, command, parsed)
 end
 
 -----------------------------------------------------
--- TODO: Converting inputs types into their user-defined types
+-- TODO: Converting inputs (args, flags) into their user-defined types.
+-- TODO: Inherited flag start, such as `-xyz value` where each letter represents a different flag all sharing same value.
+-- TODO: Unlimited consuming inputs, till the next input is confirmed.
 
 local function parse(str, commands)
   local tokens = type(str) == 'string' and lexer:match(str) or str
@@ -266,7 +267,7 @@ local function parse(str, commands)
     end
   end
 
-  return parsed
+  return parsed, command
 end
 
 return parse
