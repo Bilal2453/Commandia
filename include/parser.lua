@@ -1,10 +1,24 @@
 local lpeg = require('lpeg')
 local P, C, S, R, Ct = lpeg.P, lpeg.C, lpeg.S, lpeg.R, lpeg.Ct
 
+local ERRORS = {
+  NO_SUCH_CATEGORY  = {'No such category "%s" for %s "%s', -1},
+  CATEGORY_REQUIRED = {'Category is required for %s "%s"', -2},
+
+  COMMAND_NOT_FOUND = {'Command "%s" not found', -3},
+
+  NO_SUCH_FLAG           = {'No such flag "%s" for %s "%s"', -4},
+  FLAG_REQUIRED          = {'The positioned argument #%d requires %d values, got only %d value(s)', -5},
+  FLAG_VALUES_NOT_ENOUGH = {'Not enough values for flag "%s" of %s "%s"', -6},
+
+  UNKNOWN_ARGUMENT           = {'Unknown positioned argument "%s" for %s "%s" accepts #%d argument(s), got %d argument', -7},
+  ARGUMENT_REQUIRED          = {'The positioned argument #%d is required for %s "%s"', -8},
+  ARGUMENT_NOT_FOUND         = {'Attempt to find positioned argument #%d:"%s"', -9},
+  ARGUMENT_VALUES_NOT_ENOUGH = {'The positioned argument #%d requires %d values, got only %d value(s)', -10},
+}
+
 local lexer
 do
-  -- TODO: Clean this grammar mess, might use `re` instead?
-
   local sep, space = S'=, ', P' '^0
   local prefix = space * P'!'
   local letter = R 'az' + R 'AZ'
@@ -50,8 +64,11 @@ local function merge(t1, t2)
   end
 end
 
-local function err(str, ...)
-  return false, str:format(...)
+local function err(index, ...)
+  index = ERRORS[index]
+  if not index then return false, 'UNKNOWN ERROR : '.. index, 0 end
+
+  return false, index[1]:format(...), index[2]
 end
 
 local function findFlag(command, flag)
@@ -100,9 +117,9 @@ local function buildHandlers(tokens, command, parsed)
 
     if not (cat or type(cat) ~= 'string' or command.categories.optional) then
       if firstArgument then
-        return err('No such category "%s" for %s "%s"', firstArgument, cmdTerm, command.name)
+        return err('NO_SUCH_CATEGORY', firstArgument, cmdTerm, command.name)
       else
-        return err('Category is required for %s "%s"', cmdTerm, command.name)
+        return err('CATEGORY_REQUIRED', cmdTerm, command.name)
       end
     elseif cat then
       parsed.category = cat.name
@@ -115,14 +132,16 @@ local function buildHandlers(tokens, command, parsed)
   local function handleFlag(part, flagPart)
     local flag = findFlag(command, flagPart)
     if not flag then
-      return err('No such flag "%s" for %s "%s"', flagPart[2], cmdTerm, command.name)
+      return err('NO_SUCH_FLAG', flagPart[2], cmdTerm, command.name)
     end
 
     local partSize = #part-1
     part[1] = nil
 
     if partSize < flag.requires then
-      return err('Not enough values for flag "%s" of %s "%s"', flag.name, cmdTerm, command.name)
+      local a ,b , c = err('FLAG_VALUES_NOT_ENOUGH', flag.name, cmdTerm, command.name)
+      p(1, a, b, c)
+      return a, b ,c
     end
 
     local consumed = consume(flag.consumes, part, 1, partSize, 2)
@@ -138,9 +157,7 @@ local function buildHandlers(tokens, command, parsed)
     local argIndex = parsed.arguments.n + 1
 
     if argIndex > #command.arguments then
-      return err('Unknown positioned argument "%s" for %s "%s" accepts #%d argument(s), got %d argument',
-        part[1], command.name, #command.arguments, argIndex
-      )
+      return err('UNKNOWN_ARGUMENT', part[1], command.name, #command.arguments, argIndex)
     end
 
     -- Incase the last argument did not consume all the needed values (a flag in between for example)
@@ -159,7 +176,7 @@ local function buildHandlers(tokens, command, parsed)
 
     local arg = command.arguments[argIndex]
     if not arg then -- should never happen
-      return err('Attempt to find positioned argument #%d:"%s"', argIndex, part[1])
+      return err('ARGUMENT_NOT_FOUND', argIndex, part[1])
     end
 
     local parsedArg = parsed.arguments[arg.name]
@@ -186,16 +203,18 @@ local function buildHandlers(tokens, command, parsed)
 end
 
 -----------------------------------------------------
+-- TODO: Clean grammar mess, might use `re` instead?
 -- TODO: Converting inputs (args, flags) into their user-defined types.
 -- TODO: Inherited flag start, such as `-xyz value` where each letter represents a different flag all sharing same value.
 -- TODO: Unlimited consuming inputs, till the next input is confirmed.
+-- TODO: Customized prefix, accepting either a function or string from the user.
 
 local function parse(str, commands)
   local tokens = type(str) == 'string' and lexer:match(str) or str
   if type(tokens) ~= 'table' then return nil end
 
   local command = commands[tokens.command]
-  if not command then return err('Command "%s" not found', tokens.command) end
+  if not command then return err('COMMAND_NOT_FOUND', tokens.command) end
 
   -- The final output of the parser
   local parsed = {
@@ -208,8 +227,8 @@ local function parse(str, commands)
   local handleCategory, handleFlag, handleArgument = buildHandlers(tokens, command, parsed)
 
   -- Handle categories and possible errors
-  local success, msg = handleCategory()
-  if not success then return false, msg end
+  local success, msg, errCode = handleCategory()
+  if not success then return false, msg, errCode end
 
   -- Parse the category as a separate command allowing for recursion
   if parsed.category and not tokens._category then
@@ -237,11 +256,11 @@ local function parse(str, commands)
 
       -- Consume the value and handle possible errors
       if type(av) == 'table' then -- it is a flag
-        success, msg = handleFlag(part, av)
+        success, msg, errCode = handleFlag(part, av)
       else -- it is an argument or an argument's value
-        success, msg = handleArgument(part)
+        success, msg, errCode = handleArgument(part)
       end
-      if not success then return false, msg end
+      if not success then return false, msg, errCode end
 
       ::continue::
     end
@@ -251,7 +270,7 @@ local function parse(str, commands)
   local flags = command.flags
   for i=1, #flags do
     if flags[i].required and not parsed.flags[flags[i].name] then
-      return err('Flag "%s" is required for %s "%s"', flags[i].name, cmdTerm, command.name)
+      return err('FLAG_REQUIRED', flags[i].name, cmdTerm, command.name)
     end
   end
 
@@ -261,9 +280,9 @@ local function parse(str, commands)
     ai = arguments[i]
 
     if ai.required and not parsed.arguments[ai.name] then
-      return err('The positioned argument #%d is required for %s "%s"', i, cmdTerm, command.name)
+      return err('ARGUMENT_REQUIRED', i, cmdTerm, command.name)
     elseif ai.required and #parsed.arguments[ai.name] < ai.requires then
-      return err('The positioned argument #%d requires %d values, got only %d value(s)', i, ai.requires, #parsed.arguments[ai.name])
+      return err('ARGUMENT_VALUES_NOT_ENOUGH', i, ai.requires, #parsed.arguments[ai.name])
     end
   end
 

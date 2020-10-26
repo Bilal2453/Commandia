@@ -61,9 +61,6 @@ return function (mgr, msg)
   -- Parse the message
 	local parsed, cmd = parse(msg.content, mgr._commands)
   if parsed == false and cmd then -- Parsing error
-    -- TODO: Expose the parsing errors to here, so we can be able to decide
-    -- what errors to reply and what to not depending on user configurations.
-    -- Maybe returning an error code too?
     replySuccess(false, cmd)
   elseif not cmd then -- should never happen
     if mgr.replyToUndefinedCommands then
