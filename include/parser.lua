@@ -139,9 +139,7 @@ local function buildHandlers(tokens, command, parsed)
     part[1] = nil
 
     if partSize < flag.requires then
-      local a ,b , c = err('FLAG_VALUES_NOT_ENOUGH', flag.name, cmdTerm, command.name)
-      p(1, a, b, c)
-      return a, b ,c
+      return err('FLAG_VALUES_NOT_ENOUGH', flag.name, cmdTerm, command.name)
     end
 
     local consumed = consume(flag.consumes, part, 1, partSize, 2)
@@ -289,4 +287,7 @@ local function parse(str, commands)
   return parsed, command
 end
 
-return parse
+return {
+  parse = parse,
+  errorsList = ERRORS
+}
