@@ -42,9 +42,9 @@ do
   local flag = Ct(flagNode(longFlag + shortFlag) * (sep * args^0)^0)
 
   local function node(pattern)
-    return pattern / function(prefix, name, ...)
+    return pattern / function(pf, name, ...)
       return {
-        prefix = prefix,
+        pf = pf,
         command = name,
         ...
       }
@@ -68,7 +68,7 @@ local function err(index, ...)
   index = ERRORS[index]
   if not index then return false, 'UNKNOWN ERROR : '.. index, 0 end
 
-  return false, index[1]:format(...), index[2]
+  return false, index[1]:format(...), index[2], {...}
 end
 
 local function findFlag(command, flag)
