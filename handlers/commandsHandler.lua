@@ -93,14 +93,14 @@ return function (manager)
 
     local returnType = type(r)
     if returnType == 'function' then
-      manager._commands[n] = manager:createCommand(n, r, perms, aliases, args, false)
+      manager._commands[n] = manager:createCommand(n, r, args, aliases, perms, false)
     elseif returnType == 'table' then
 
       manager._commands[n] = manager:createCommand(
         n, r.callback or cb,
-        r.permissions or r.perms or perms,
-        r.aliases,
         r.arguments or r.args or args,
+        r.aliases,
+        r.permissions or r.perms or perms,
         false
       )
 
@@ -112,7 +112,7 @@ return function (manager)
 
       manager._commands[n] = r
     elseif not r and cb then
-      manager._commands[n] = manager:createCommand(n, cb, perms, aliases, args, false)
+      manager._commands[n] = manager:createCommand(n, cb, args, aliases, perms, false)
     elseif next(g) then
       log(1, n, 'A callback is required but got no callback '..
         '(you can either define a global "callback", and/or return a function value. See wiki for more info.)'
