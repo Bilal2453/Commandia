@@ -8,7 +8,7 @@ local ERRORS = {
   COMMAND_NOT_FOUND = {'Command "%s" not found', -3},
 
   NO_SUCH_FLAG           = {'No such flag "%s" for %s "%s"', -4},
-  FLAG_REQUIRED          = {'The positioned argument #%d requires %d values, got only %d value(s)', -5},
+  FLAG_REQUIRED          = {'The flag "%s" is required for %s "%s"', -5},
   FLAG_VALUES_NOT_ENOUGH = {'Not enough values for flag "%s" of %s "%s"', -6},
 
   UNKNOWN_ARGUMENT           = {'Unknown positioned argument "%s" for %s "%s" accepts #%d argument(s), got %d argument', -7},
