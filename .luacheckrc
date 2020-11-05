@@ -1,3 +1,6 @@
 return {
-  std = 'luajit'
+  std = 'luajit',
+  globals = {
+    "module", "p"
+  }
 }
